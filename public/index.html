@@ -1,0 +1,1955 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Web Chat</title>
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="icon" href="/icon-192.png" />
+<meta name="theme-color" content="#161c2b" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<style>
+  :root {
+    --bg: #0f1420;
+    --bg-panel: #161c2b;
+    --bg-panel-2: #1c2437;
+    --border: #26304a;
+    --text: #e8ecf5;
+    --text-dim: #93a0bd;
+    --accent: #4f8cff;
+    --accent-2: #2f6fe0;
+    --bubble-me: #2f6fe0;
+    --bubble-them: #232c42;
+    --ok: #37c978;
+    --warn: #e0a13a;
+    --err: #ef5f6b;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(1200px 600px at 80% -10%, #1b2740 0%, var(--bg) 60%);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; cursor: pointer; }
+  input, textarea { font: inherit; }
+  .hidden { display: none !important; }
+
+  /* ================= EMOJIS FLUTUANTES (so nas telas de entrada) ============= */
+  .screen {
+    position: relative;
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    overflow: hidden;
+  }
+  .emoji-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .emoji {
+    position: absolute;
+    bottom: -80px;
+    will-change: transform, opacity;
+    user-select: none;
+    filter: drop-shadow(0 6px 14px rgba(0,0,0,.28));
+    animation-name: rise;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
+  @keyframes rise {
+    0%   { transform: translate3d(0, 0, 0) rotate(var(--rot)) scale(.85); opacity: 0; }
+    10%  { opacity: var(--op); }
+    50%  { transform: translate3d(var(--sway), -55vh, 0) rotate(calc(var(--rot) + 20deg)) scale(1); }
+    85%  { opacity: var(--op); }
+    100% { transform: translate3d(calc(var(--sway) * -0.6), -118vh, 0) rotate(calc(var(--rot) - 16deg)) scale(.95); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .emoji-layer { display: none; } }
+
+  /* ================= CARDS DAS TELAS DE ENTRADA ================= */
+  .card {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 470px;
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
+    padding: 42px 34px 30px;
+    text-align: center;
+    background: rgba(22, 28, 43, .74);
+    border: 1px solid rgba(255,255,255,.07);
+    border-radius: 28px;
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    box-shadow: 0 30px 80px rgba(0,0,0,.5);
+  }
+  .card h1 { margin: 0 0 8px; font-size: 30px; font-weight: 700; letter-spacing: -.04em; }
+  .card .sub { margin: 0 auto 26px; max-width: 300px; color: var(--text-dim); font-size: 14px; line-height: 1.6; }
+
+  .row { display: flex; gap: 10px; }
+  .field { flex: 1 1 0; min-width: 0; text-align: left; margin-bottom: 14px; }
+  .field.small { flex: 0 0 132px; }
+  label {
+    display: block; font-size: 11px; font-weight: 600; color: var(--text-dim);
+    margin-bottom: 7px; text-transform: uppercase; letter-spacing: .08em;
+  }
+  input[type=text], textarea {
+    width: 100%;
+    padding: 13px 15px;
+    background: rgba(255,255,255,.045);
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 13px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s, background .15s;
+  }
+  input::placeholder, textarea::placeholder { color: rgba(147,160,189,.6); }
+  input:focus, textarea:focus { border-color: var(--accent); background: rgba(79,140,255,.09); }
+  textarea { resize: vertical; min-height: 64px; }
+  .code-line { display: flex; gap: 8px; }
+  #codeInput { text-transform: lowercase; letter-spacing: .16em; font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .btn {
+    width: 100%;
+    padding: 15px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(180deg, var(--accent), var(--accent-2));
+    color: #fff; font-size: 15px; font-weight: 600;
+    box-shadow: 0 12px 30px rgba(47,111,224,.34);
+    transition: transform .12s, box-shadow .12s;
+  }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.ghost {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    box-shadow: none; color: var(--text-dim);
+  }
+  .btn.small { width: auto; padding: 13px 15px; font-size: 18px; line-height: 1; }
+  .btn.mt { margin-top: 6px; }
+  .stack { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+
+  .hint { margin-top: 14px; font-size: 12px; color: rgba(147,160,189,.75); line-height: 1.5; }
+  .error { color: var(--err); font-size: 13px; margin-top: 12px; min-height: 18px; }
+  .ok-note { color: var(--ok); font-size: 12px; margin-top: 8px; }
+
+  /* Foto do grupo */
+  .avatar-pick { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; text-align: left; }
+  .avatar-big {
+    width: 84px; height: 84px; flex: 0 0 84px; border-radius: 22px;
+    display: grid; place-items: center; overflow: hidden;
+    background: linear-gradient(140deg, #2f6fe0, #7a4ff0);
+    color: #fff; font-size: 30px; font-weight: 700;
+    border: 1px solid rgba(255,255,255,.12);
+  }
+  .avatar-big img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .avatar-pick .txt { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .link { background: none; border: none; color: var(--accent); padding: 0; font-size: 13px; text-decoration: underline; }
+
+  /* Interruptor de sala privada */
+  .switch {
+    display: flex; align-items: flex-start; gap: 12px; text-align: left;
+    padding: 14px; margin: 4px 0 6px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 14px; cursor: pointer;
+  }
+  .switch input { margin-top: 3px; width: 17px; height: 17px; accent-color: var(--accent); flex: 0 0 auto; }
+  .switch b { display: block; font-size: 14px; margin-bottom: 3px; }
+  .switch span { font-size: 12px; color: var(--text-dim); line-height: 1.45; }
+
+  /* Banner do grupo */
+  .banner { display: flex; flex-direction: column; align-items: center; margin-bottom: 20px; }
+  .banner .avatar-big { width: 108px; height: 108px; flex-basis: 108px; font-size: 40px; border-radius: 26px; }
+  .banner h2 { margin: 14px 0 4px; font-size: 21px; letter-spacing: -.02em; }
+  .banner .code-chip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; color: var(--accent);
+    background: rgba(79,140,255,.12); border: 1px solid rgba(79,140,255,.3);
+    padding: 3px 10px; border-radius: 999px; letter-spacing: .1em;
+  }
+  .banner .desc { margin: 12px 0 0; font-size: 14px; color: var(--text-dim); line-height: 1.55; max-width: 330px; }
+  .banner .meta { margin-top: 12px; font-size: 12px; color: rgba(147,160,189,.8); display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  .lock { color: var(--warn); font-size: 12px; margin-top: 10px; }
+
+  /* ================= CHAT ================= */
+  .chat { display: none; height: 100dvh; }
+  .chat.on { display: grid; grid-template-columns: 260px 1fr; }
+  @media (max-width: 820px) {
+    .chat.on { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .mobile-req { display: flex; }
+    .mobile-req.hidden { display: none; }
+  }
+
+  .sidebar {
+    background: var(--bg-panel); border-right: 1px solid var(--border);
+    padding: 18px 16px; display: flex; flex-direction: column; gap: 18px; overflow: auto;
+  }
+  .side-title { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-dim); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .user-row { display: flex; align-items: center; gap: 9px; padding: 6px 0; font-size: 14px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; flex: 0 0 auto; }
+  .avatar.off { opacity: .45; }
+  .tag { font-size: 10px; color: var(--text-dim); border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; margin-left: auto; }
+  .tag.admin { color: var(--warn); border-color: rgba(224,161,58,.4); }
+
+  /* Pedidos pendentes (admin) */
+  .req-panel { border: 1px solid rgba(224,161,58,.3); background: rgba(224,161,58,.08); border-radius: 14px; padding: 12px; }
+  .req-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.06); font-size: 13px; }
+  .req-item:first-of-type { border-top: none; }
+  .req-item .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .icon-btn { width: 30px; height: 30px; border-radius: 9px; border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); color: var(--text); font-size: 14px; }
+  .icon-btn.ok:hover { background: rgba(55,201,120,.2); border-color: var(--ok); }
+  .icon-btn.no:hover { background: rgba(239,95,107,.2); border-color: var(--err); }
+  .badge { background: var(--warn); color: #1a1206; font-size: 10px; font-weight: 800; border-radius: 999px; padding: 1px 7px; }
+
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    background: rgba(22,28,43,.85); backdrop-filter: blur(8px);
+  }
+  .topbar .avatar-big { width: 44px; height: 44px; flex-basis: 44px; border-radius: 13px; font-size: 17px; }
+  .topbar .titles { min-width: 0; }
+  .topbar h2 { margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topbar .code-chip { font-size: 10px; padding: 1px 7px; }
+  .status { margin-left: auto; font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .status .led { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .status.off .led { background: var(--err); }
+  .status.warn .led { background: var(--warn); }
+  .mobile-req { display: none; align-items: center; }
+
+  .messages { flex: 1; overflow-y: auto; padding: 20px 18px 8px; display: flex; flex-direction: column; gap: 3px; }
+  .load-more { align-self: center; background: var(--bg-panel-2); border: 1px solid var(--border); color: var(--text-dim); border-radius: 999px; padding: 7px 14px; font-size: 12px; margin-bottom: 12px; }
+  .day-sep { align-self: center; font-size: 11px; color: var(--text-dim); background: var(--bg-panel); border: 1px solid var(--border); padding: 3px 11px; border-radius: 999px; margin: 14px 0 10px; }
+  .system { align-self: center; font-size: 12px; color: var(--text-dim); margin: 8px 0; }
+  .msg { max-width: min(72%, 620px); padding: 8px 12px; border-radius: var(--radius); font-size: 14.5px; line-height: 1.45; word-wrap: break-word; }
+  .msg.them { background: var(--bubble-them); border-bottom-left-radius: 4px; align-self: flex-start; margin-top: 6px; }
+  .msg.me { background: var(--bubble-me); border-bottom-right-radius: 4px; align-self: flex-end; margin-top: 6px; }
+  .msg .author { font-size: 11.5px; font-weight: 700; color: #a9c6ff; margin-bottom: 2px; }
+  .msg.me .author { color: rgba(255,255,255,.78); }
+  .msg .meta { font-size: 10.5px; color: rgba(255,255,255,.55); text-align: right; margin-top: 3px; }
+  .msg.them .meta { color: var(--text-dim); }
+  .msg.failed { background: rgba(239,95,107,.16); border: 1px solid rgba(239,95,107,.4); align-self: flex-end; }
+  .msg.failed .retry { background: none; border: none; color: #ff9aa3; text-decoration: underline; padding: 0; font-size: 10.5px; }
+
+  .typing { height: 20px; padding: 0 18px 4px; font-size: 12px; color: var(--text-dim); font-style: italic; }
+  .composer { display: flex; gap: 10px; padding: 12px 16px 16px; border-top: 1px solid var(--border); background: rgba(22,28,43,.7); }
+  .composer textarea { flex: 1; resize: none; height: 46px; max-height: 140px; padding: 12px 14px; border-radius: 12px; min-height: 0; }
+  .send { width: 46px; height: 46px; border: none; border-radius: 12px; background: linear-gradient(180deg, var(--accent), var(--accent-2)); color: #fff; font-size: 18px; }
+
+  /* Aguardando aprovacao */
+  .pending-box { text-align: center; max-width: 360px; }
+  .spinner { width: 42px; height: 42px; margin: 0 auto 18px; border: 3px solid rgba(255,255,255,.12); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 92px; transform: translateX(-50%);
+    background: #2a1520; border: 1px solid rgba(239,95,107,.5); color: #ffb9c0;
+    padding: 9px 16px; border-radius: 10px; font-size: 13px; display: none; z-index: 50; max-width: 90vw;
+  }
+  .toast.on { display: block; }
+  .toast.good { background: #12261b; border-color: rgba(55,201,120,.5); color: #a8ecc6; }
+
+  /* ================= PAINEL DE INFORMACOES DO GRUPO ================= */
+  .sheet-backdrop {
+    position: fixed; inset: 0; z-index: 40;
+    background: rgba(6, 9, 16, .6);
+    backdrop-filter: blur(3px);
+    display: grid; place-items: center; padding: 20px;
+  }
+  .sheet {
+    width: 100%; max-width: 430px; max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 26px 24px 22px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6);
+  }
+  .sheet .banner { margin-bottom: 16px; }
+  .sheet h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--text-dim); margin: 20px 0 8px;
+  }
+  .member-line {
+    display: flex; align-items: center; gap: 9px;
+    padding: 8px 0; font-size: 14px;
+    border-top: 1px solid rgba(255,255,255,.05);
+  }
+  .member-line:first-of-type { border-top: none; }
+  .member-line .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mini {
+    font-size: 11px; padding: 5px 9px; border-radius: 8px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+    color: var(--text-dim);
+  }
+  .mini:hover { color: var(--text); border-color: var(--accent); }
+  .mini.danger:hover { color: var(--err); border-color: var(--err); }
+  .sheet .btn { margin-top: 8px; }
+  .sheet .btn.danger { background: rgba(239,95,107,.16); border: 1px solid rgba(239,95,107,.4); color: #ffb9c0; box-shadow: none; }
+  .close-x {
+    position: sticky; top: -6px; float: right;
+    width: 32px; height: 32px; border-radius: 10px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); color: var(--text-dim);
+  }
+
+  /* Reacoes e acoes na bolha */
+  .msg .actions { display: none; gap: 6px; margin-top: 5px; }
+  .msg:hover .actions { display: flex; }
+  .msg .actions button {
+    font-size: 11px; padding: 2px 7px; border-radius: 7px;
+    background: rgba(255,255,255,.1); border: none; color: inherit; opacity: .8;
+  }
+  .msg .actions button:hover { opacity: 1; background: rgba(255,255,255,.2); }
+  .rx { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .rx button {
+    font-size: 12px; padding: 2px 7px; border-radius: 999px;
+    background: rgba(255,255,255,.12); border: 1px solid transparent; color: inherit;
+  }
+  .rx button.mine { border-color: var(--accent); background: rgba(79,140,255,.28); }
+  .msg.deleted .text { font-style: italic; opacity: .6; }
+  .topbar button.info { width: 34px; height: 34px; border-radius: 10px; font-size: 15px; padding: 0; }
+
+  /* ================= CITACAO / RESPOSTA ================= */
+  .quote {
+    display: block;
+    border-left: 3px solid rgba(255,255,255,.35);
+    padding: 2px 0 2px 8px;
+    margin-bottom: 5px;
+    opacity: .85;
+    font-size: 12.5px;
+    line-height: 1.35;
+    text-align: left;
+    cursor: pointer;
+  }
+  .msg.them .quote { border-left-color: var(--accent); }
+  .quote b { font-weight: 700; }
+  .quote .q-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
+
+  /* Barra "respondendo a..." acima do campo de texto */
+  .replying {
+    display: none;
+    align-items: center; gap: 10px;
+    padding: 8px 16px;
+    border-top: 1px solid var(--border);
+    background: rgba(79,140,255,.08);
+    font-size: 12.5px;
+  }
+  .replying.on { display: flex; }
+  .replying .bar { width: 3px; align-self: stretch; background: var(--accent); border-radius: 2px; }
+  .replying .who { font-weight: 700; color: var(--accent); }
+  .replying .preview {
+    flex: 1; min-width: 0; color: var(--text-dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .replying button { background: none; border: none; color: var(--text-dim); font-size: 15px; padding: 0 4px; }
+  .replying button:hover { color: var(--err); }
+  .msg.flash { animation: flash 1.2s ease-out; }
+  @keyframes flash {
+    0%, 40% { box-shadow: 0 0 0 2px var(--accent); }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  /* ================= VISTO POR ================= */
+  .ticks { font-size: 11px; letter-spacing: -2px; margin-left: 4px; opacity: .8; }
+  .ticks.read { color: #7fd4ff; opacity: 1; }
+  .meta .seenby { display: block; font-style: italic; opacity: .8; }
+
+  /* ================= ANEXOS ================= */
+  .attach { display: block; margin-bottom: 5px; }
+  .attach img {
+    display: block; max-width: 260px; max-height: 300px; width: auto;
+    border-radius: 10px; border: 1px solid rgba(255,255,255,.12);
+  }
+  .file-card {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px; margin-bottom: 5px;
+    background: rgba(255,255,255,.09);
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 12px; text-decoration: none; color: inherit;
+    max-width: 280px;
+  }
+  .file-card:hover { background: rgba(255,255,255,.15); }
+  .file-card .ico { font-size: 22px; flex: 0 0 auto; }
+  .file-card .nm { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-card .sz { font-size: 11px; opacity: .7; }
+
+  /* Links dentro do texto */
+  .msg .text a { color: #a9d0ff; text-decoration: underline; }
+  .msg.me .text a { color: #dbe9ff; }
+
+  /* Botao de anexo e pre-visualizacao do envio */
+  .composer .clip {
+    width: 46px; height: 46px; flex: 0 0 46px;
+    border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-panel-2); color: var(--text-dim); font-size: 19px;
+  }
+  .composer .clip:hover { color: var(--text); border-color: var(--accent); }
+  .attachbar {
+    display: none; align-items: center; gap: 10px;
+    padding: 8px 16px; border-top: 1px solid var(--border);
+    background: rgba(255,255,255,.03); font-size: 12.5px;
+  }
+  .attachbar.on { display: flex; }
+  .attachbar img { width: 40px; height: 40px; object-fit: cover; border-radius: 8px; }
+  .attachbar .fico { font-size: 24px; }
+  .attachbar .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attachbar button { background: none; border: none; color: var(--text-dim); font-size: 15px; }
+  .attachbar button:hover { color: var(--err); }
+
+  /* ================= NOTIFICACOES ================= */
+  .notif-row { display: flex; align-items: center; gap: 10px; padding: 10px 0 0; }
+  .notif-row .state { flex: 1; font-size: 12px; color: var(--text-dim); line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<!-- ============ TELA 1: NOME ============ -->
+<section class="screen" id="screenHome">
+  <div class="emoji-layer" id="emojiLayer" aria-hidden="true"></div>
+  <form class="card" id="homeForm">
+    <h1>Web Chat</h1>
+    <p class="sub">Digite seu nome para comecar.</p>
+    <div class="field">
+      <label for="nameInput">Nome</label>
+      <input id="nameInput" type="text" maxlength="24" placeholder="seu nome" autocomplete="nickname" />
+    </div>
+    <div class="stack">
+      <button class="btn" type="submit" id="toCreateBtn">Criar sala</button>
+      <button class="btn ghost" type="button" id="toJoinBtn">Entrar com codigo</button>
+    </div>
+    <div class="error" id="homeError"></div>
+  </form>
+</section>
+
+<!-- ============ TELA 2: CRIAR SALA ============ -->
+<section class="screen hidden" id="screenCreate">
+  <div class="emoji-layer" data-emoji aria-hidden="true"></div>
+  <form class="card" id="createForm">
+    <h1>Nova sala</h1>
+    <p class="sub">Monte o grupo: foto, nome, descricao e o codigo que voce vai compartilhar.</p>
+
+    <div class="avatar-pick">
+      <div class="avatar-big" id="createAvatarPreview">?</div>
+      <div class="txt">
+        Foto do grupo<br />
+        <button class="link" type="button" id="pickAvatarBtn">Enviar imagem</button>
+        <input type="file" id="avatarInput" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" />
+        <div id="avatarStatus"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="roomNameInput">Nome da sala</label>
+      <input id="roomNameInput" type="text" maxlength="40" placeholder="ex: Familia, Trabalho, Futebol" />
+    </div>
+
+    <div class="field">
+      <label for="descInput">Descricao</label>
+      <textarea id="descInput" maxlength="200" placeholder="Sobre o que e este grupo?"></textarea>
+    </div>
+
+    <div class="field">
+      <label for="codeInput">Codigo da sala</label>
+      <div class="code-line">
+        <input id="codeInput" type="text" maxlength="24" placeholder="abc123" autocomplete="off" spellcheck="false" />
+        <button class="btn small" type="button" id="genCodeBtn" title="Gerar codigo unico">&#8635;</button>
+      </div>
+      <div class="hint">So letras e numeros. O codigo e unico: se ja existir, o servidor recusa.</div>
+    </div>
+
+    <label class="switch" for="privateInput">
+      <input type="checkbox" id="privateInput" />
+      <span>
+        <b>Sala privada</b>
+        <span>Quem chegar precisa da sua aprovacao para entrar.</span>
+      </span>
+    </label>
+
+    <div class="stack">
+      <button class="btn" type="submit" id="createBtn">Criar sala</button>
+      <button class="btn ghost" type="button" data-back="screenHome">Voltar</button>
+    </div>
+    <div class="error" id="createError"></div>
+  </form>
+</section>
+
+<!-- ============ TELA 3: ENTRAR COM CODIGO ============ -->
+<section class="screen hidden" id="screenLookup">
+  <div class="emoji-layer" data-emoji aria-hidden="true"></div>
+  <form class="card" id="lookupForm">
+    <h1>Entrar em uma sala</h1>
+    <p class="sub">Digite o codigo que voce recebeu.</p>
+    <div class="field">
+      <label for="lookupCodeInput">Codigo</label>
+      <input id="lookupCodeInput" type="text" maxlength="24" placeholder="abc123" autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="stack">
+      <button class="btn" type="submit" id="lookupBtn">Buscar sala</button>
+      <button class="btn ghost" type="button" data-back="screenHome">Voltar</button>
+    </div>
+    <div class="error" id="lookupError"></div>
+  </form>
+</section>
+
+<!-- ============ TELA 4: BANNER DO GRUPO ============ -->
+<section class="screen hidden" id="screenRoom">
+  <div class="emoji-layer" data-emoji aria-hidden="true"></div>
+  <div class="card">
+    <div class="banner">
+      <div class="avatar-big" id="roomBannerAvatar">?</div>
+      <h2 id="roomBannerName">Sala</h2>
+      <span class="code-chip" id="roomBannerCode">#------</span>
+      <p class="desc" id="roomBannerDesc"></p>
+      <div class="meta">
+        <span id="roomBannerMembers"></span>
+        <span id="roomBannerCreator"></span>
+      </div>
+      <div class="lock hidden" id="roomBannerLock">Sala privada &middot; precisa de aprovacao</div>
+    </div>
+    <div class="stack">
+      <button class="btn" type="button" id="roomJoinBtn">Entrar na sala</button>
+      <button class="btn ghost" type="button" data-back="screenLookup">Voltar</button>
+    </div>
+    <div class="error" id="roomError"></div>
+  </div>
+</section>
+
+<!-- ============ TELA 5: AGUARDANDO APROVACAO ============ -->
+<section class="screen hidden" id="screenPending">
+  <div class="emoji-layer" data-emoji aria-hidden="true"></div>
+  <div class="card">
+    <div class="pending-box">
+      <div class="spinner"></div>
+      <h1>Pedido enviado</h1>
+      <p class="sub" id="pendingText">Aguardando o administrador aprovar sua entrada.</p>
+      <button class="btn ghost" type="button" id="cancelPendingBtn">Cancelar e voltar</button>
+    </div>
+    <div class="error" id="pendingError"></div>
+  </div>
+</section>
+
+<!-- ============ CHAT ============ -->
+<section class="chat" id="chat">
+  <aside class="sidebar">
+    <div class="req-panel hidden" id="reqPanel">
+      <div class="side-title">Pedidos de entrada <span class="badge" id="reqBadge">0</span></div>
+      <div id="reqList"></div>
+    </div>
+    <div>
+      <div class="side-title">Membros <span id="onlineCount">0</span></div>
+      <div id="userList"></div>
+    </div>
+    <button class="btn ghost" id="leaveBtn" style="margin-top:auto">Sair da sala</button>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="avatar-big" id="chatAvatar">?</div>
+      <div class="titles">
+        <h2 id="chatRoomName">Sala</h2>
+        <span class="code-chip" id="chatRoomCode">#------</span>
+      </div>
+      <button class="btn ghost small mobile-req hidden" id="mobileReqBtn" title="Pedidos de entrada">&#128276;</button>
+      <button class="btn ghost info" id="infoBtn" title="Informacoes do grupo">&#9432;</button>
+      <div class="status" id="status"><span class="led"></span><span id="statusText">conectado</span></div>
+    </header>
+
+    <div class="messages" id="messages">
+      <button class="load-more hidden" id="loadMore">Carregar mensagens anteriores</button>
+    </div>
+
+    <div class="typing" id="typing"></div>
+
+    <div class="replying" id="replyBar">
+      <span class="bar"></span>
+      <span>
+        <span class="who" id="replyWho">---</span>
+        <span class="preview" id="replyPreview"></span>
+      </span>
+      <button type="button" id="replyCancel" title="Cancelar resposta">&#10005;</button>
+    </div>
+
+    <div class="attachbar" id="attachBar">
+      <span id="attachThumb"></span>
+      <span class="nm" id="attachName"></span>
+      <button type="button" id="attachCancel" title="Remover anexo">&#10005;</button>
+    </div>
+
+    <form class="composer" id="composer">
+      <button class="clip" type="button" id="clipBtn" title="Enviar foto ou arquivo">&#128206;</button>
+      <input type="file" id="chatFileInput" class="hidden" />
+      <textarea id="input" placeholder="Escreva uma mensagem..." maxlength="1000"></textarea>
+      <button class="send" type="submit" id="sendBtn" title="Enviar">&#10148;</button>
+    </form>
+  </div>
+</section>
+
+<!-- ============ PAINEL: INFORMACOES DO GRUPO ============ -->
+<div class="sheet-backdrop hidden" id="reqSheet">
+  <div class="sheet">
+    <button class="close-x" type="button" id="reqClose" title="Fechar">&#10005;</button>
+    <h3>Pedidos de entrada</h3>
+    <p class="desc">Aprove ou recuse quem quer entrar na sala.</p>
+    <div id="reqListMobile"></div>
+  </div>
+</div>
+
+<div class="sheet-backdrop hidden" id="infoSheet">
+  <div class="sheet">
+    <button class="close-x" type="button" id="infoClose" title="Fechar">&#10005;</button>
+    <div class="banner">
+      <div class="avatar-big" id="infoAvatar">?</div>
+      <h2 id="infoName">Sala</h2>
+      <span class="code-chip" id="infoCode">#------</span>
+      <p class="desc" id="infoDesc"></p>
+      <div class="meta">
+        <span id="infoMembers"></span>
+        <span id="infoCreator"></span>
+      </div>
+      <div class="lock hidden" id="infoLock">Sala privada &middot; precisa de aprovacao</div>
+    </div>
+
+    <div id="infoAdminZone" class="hidden">
+      <h3>Editar sala</h3>
+      <div class="field">
+        <label for="infoNameInput">Nome</label>
+        <input id="infoNameInput" type="text" maxlength="40" />
+      </div>
+      <div class="field">
+        <label for="infoDescInput">Descricao</label>
+        <textarea id="infoDescInput" maxlength="200"></textarea>
+      </div>
+      <label class="switch" for="infoPrivateInput">
+        <input type="checkbox" id="infoPrivateInput" />
+        <span>
+          <b>Sala privada</b>
+          <span>Quem chegar precisa da aprovacao de um administrador.</span>
+        </span>
+      </label>
+      <div class="stack">
+        <button class="btn" type="button" id="infoSaveBtn">Salvar alteracoes</button>
+        <button class="btn ghost" type="button" id="infoAvatarBtn">Trocar foto do grupo</button>
+        <input type="file" id="infoAvatarInput" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden" />
+      </div>
+    </div>
+
+    <h3 id="infoMembersTitle">Membros</h3>
+    <div id="infoMemberList"></div>
+
+    <h3>Notificacoes</h3>
+    <div class="notif-row">
+      <button class="mini" type="button" id="notifBtn">Ativar notificacoes</button>
+      <span class="state" id="notifState">Desligadas.</span>
+    </div>
+    <div class="hint">Chegam mesmo com a aba fechada. Precisam de HTTPS e da permissao do navegador.</div>
+
+    <button class="btn ghost" type="button" id="infoLeaveBtn">Sair da sala</button>
+    <div id="infoDeleteZone" class="hidden">
+      <button class="btn danger" type="button" id="infoDeleteBtn">Apagar sala para todos</button>
+      <div class="hint">Apagar remove mensagens, membros e pedidos. O codigo nao podera ser usado de novo.</div>
+    </div>
+    <div class="error" id="infoError"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/config.js"></script>
+<script>
+/* =========================================================================
+   Fluxo de telas:
+     screenHome -> screenCreate -> (cria) -> chat
+     screenHome -> screenLookup -> screenRoom -> chat | screenPending -> chat
+   ========================================================================= */
+
+const $ = (id) => document.getElementById(id);
+const AVATAR_COLORS = ['#4f8cff','#c160ff','#37c978','#e0a13a','#ef5f6b','#2ec4d6','#ff7ab2'];
+
+/* ------------------- backend remoto opcional (Netlify) -------------------
+   Com o frontend servido pelo proprio Express, config.js deixa a URL vazia e
+   tudo acontece em mesma origem (sem CORS). Servindo o frontend em outro host
+   (Netlify), config.js aponta para o Render e o cliente passa a prefixar
+   socket, /push/* e /uploads/* com essa base. */
+const BACKEND = String((typeof window !== 'undefined' && window.WEB_CHAT_BACKEND_URL) || '').replace(/\/+$/, '');
+let backendBase = BACKEND;
+function setBackendBase(v) { backendBase = String(v || '').replace(/\/+$/, ''); }
+function assetUrl(u) {
+  const url = String(u || '');
+  if (!backendBase || /^https?:\/\//i.test(url)) return url;
+  return backendBase + (url.startsWith('/') ? url : '/' + url);
+}
+// O cliente do socket.io e carregado sob demanda: em mesma origem vem do
+// proprio host; separado, vem do backend. (No teste de DOM nao ha document.head
+// e o io ja existe no sandbox, entao a injecao e pulada.)
+if (typeof document !== 'undefined' && document.head && document.createElement) {
+  const sIo = document.createElement('script');
+  sIo.src = (BACKEND || '') + '/socket.io/socket.io.js';
+  document.head.appendChild(sIo);
+}
+function whenIo(cb) {
+  const g = typeof globalThis !== 'undefined' ? globalThis : window;
+  if (typeof g.io === 'function') return cb();
+  const t = setInterval(() => {
+    if (typeof g.io === 'function') { clearInterval(t); cb(); }
+  }, 50);
+}
+
+const state = {
+  socket: null,
+  name: '',
+  token: localStorage.getItem('chat.token') || null,
+  code: null,
+  profile: null,
+  me: null,
+  role: 'member',
+  oldestSeq: 0,
+  rendered: new Set(),
+  queue: [],
+  typing: new Map(),
+  typingTimer: null,
+  typingStop: null,
+  typingSent: false,
+  avatarDataUrl: null,
+  requests: [],
+  reactions: {},        // messageId -> [{emoji, userId, name}]
+  presence: [],         // ultima lista de membros recebida
+  replyTo: null,        // {id, author, text} da mensagem sendo respondida
+  push: { supported: false, endpoint: null },
+  reads: {},            // messageId -> [nome de quem leu]
+  lastReadSeq: 0,       // ate onde ja avisamos o servidor que lemos
+  lastSeenSeq: 0,       // seq da ultima mensagem recebida
+  pendingAttachment: null,
+};
+
+/** Emojis disponiveis na barrinha de reacao rapida. */
+const QUICK_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
+/* ----------------------------- utilitarios ----------------------------- */
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function timeOf(ts) { return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); }
+function dayLabel(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const yest = new Date(Date.now() - 86400000);
+  if (d.toDateString() === today.toDateString()) return 'Hoje';
+  if (d.toDateString() === yest.toDateString()) return 'Ontem';
+  return d.toLocaleDateString('pt-BR');
+}
+function colorFor(name) {
+  let h = 0;
+  for (const ch of String(name || '?')) h = (h * 31 + ch.charCodeAt(0)) % 997;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+function toast(text, good = false) {
+  const el = $('toast');
+  el.textContent = text;
+  el.className = `toast on${good ? ' good' : ''}`;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove('on'), 4000);
+}
+function scrollDown(force) {
+  const box = $('messages');
+  const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 160;
+  if (force || nearBottom) box.scrollTop = box.scrollHeight;
+}
+function show(id) {
+  ['screenHome', 'screenCreate', 'screenLookup', 'screenRoom', 'screenPending'].forEach((s) => {
+    $(s).classList.toggle('hidden', s !== id);
+  });
+  // openChat chama show(null) so para limpar as telas: sem id nao ha o que focar.
+  // (Sem este guard, $(null) retorna null e o chat inteiro morria no navegador —
+  // o stub de DOM dos testes nunca retorna null, por isso so o browser revelou.)
+  if (!id) return;
+  const first = $(id).querySelector('input:not([type=file]),textarea');
+  if (first) setTimeout(() => first.focus(), 60);
+}
+function initials(name) {
+  return String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+}
+function paintAvatar(el, profile) {
+  if (profile?.avatarUrl) {
+    el.innerHTML = `<img src="${esc(assetUrl(profile.avatarUrl))}" alt="foto do grupo" />`;
+  } else {
+    el.textContent = initials(profile?.name || '?');
+    el.style.background = `linear-gradient(140deg, ${colorFor(profile?.name)}, #7a4ff0)`;
+  }
+}
+
+/* ====================== EMOJIS FLUTUANTES ====================== */
+const EMOJI = ['😀','😂','🥳','😍','🤩','😎','🤗','🫶','👋','💬','💭','✨','🎈','🎉','⭐','🌟','💫','🔥','❤️','💙','💜','🍀','🌈','☕','🍕','🎧','🚀','🫧','🪩','🎊','😜','🤖','🐱','🐸','🦄','🌙'];
+const EMOJI_POOL_SIZE = 26;
+const EMOJI_TICK_MS = 260;
+const rnd = (min, max) => Math.random() * (max - min) + min;
+let emojiTimer = null;
+
+function startEmojis() {
+  const layers = [document.getElementById('emojiLayer'), ...document.querySelectorAll('[data-emoji]')];
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+
+  const pool = [];
+  layers.forEach((layer) => {
+    if (!layer || layer.dataset.ready) return;
+    layer.dataset.ready = '1';
+    for (let i = 0; i < EMOJI_POOL_SIZE; i += 1) {
+      const el = document.createElement('span');
+      el.className = 'emoji';
+      el.setAttribute('aria-hidden', 'true');
+      layer.appendChild(el);
+      pool.push(el);
+    }
+  });
+  pool.forEach((el, i) => respawn(el, -(i / Math.max(pool.length, 1)) * 12));
+  if (!emojiTimer && pool.length) {
+    emojiTimer = setInterval(() => respawn(pool[Math.floor(Math.random() * pool.length)]), EMOJI_TICK_MS);
+  }
+}
+function respawn(el, negativeDelay = 0) {
+  el.textContent = EMOJI[Math.floor(Math.random() * EMOJI.length)];
+  el.style.left = `${rnd(2, 96)}%`;
+  el.style.fontSize = `${rnd(20, 52)}px`;
+  el.style.setProperty('--sway', `${rnd(-80, 80).toFixed(0)}px`);
+  el.style.setProperty('--rot', `${rnd(-26, 26).toFixed(0)}deg`);
+  el.style.setProperty('--op', rnd(0.35, 0.95).toFixed(2));
+  el.style.animationDuration = `${rnd(9, 19).toFixed(1)}s`;
+  el.style.animationDelay = `${negativeDelay.toFixed(1)}s`;
+  el.style.animationName = 'none';
+  void el.offsetWidth;
+  el.style.animationName = 'rise';
+}
+function stopEmojis() {
+  if (emojiTimer) { clearInterval(emojiTimer); emojiTimer = null; }
+  document.querySelectorAll('.emoji-layer').forEach((l) => { l.style.display = 'none'; });
+}
+
+/* --------------------------- codigo de sala ---------------------------- */
+function cleanCode(v) {
+  return String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+function randomRoomCode(len = 5) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let out = '';
+  for (let i = 0; i < len; i += 1) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+function bindCodeInput(input) {
+  input.addEventListener('input', () => {
+    const clean = cleanCode(input.value);
+    if (clean !== input.value) input.value = clean;
+  });
+}
+
+/* ----------------------------- navegacao ------------------------------- */
+document.querySelectorAll('[data-back]').forEach((btn) => {
+  btn.addEventListener('click', () => show(btn.dataset.back));
+});
+$('toJoinBtn').addEventListener('click', () => {
+  // O caminho "entrar com codigo" nunca passava pelo submit do homeForm,
+  // entao state.name ia vazio e o join era recusado no banner.
+  const name = $('nameInput').value.trim();
+  if (name.length < 2) { $('homeError').textContent = 'Escolha um nome com pelo menos 2 caracteres.'; return; }
+  state.name = name;
+  show('screenLookup');
+});
+
+$('homeForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  $('homeError').textContent = '';
+  const name = $('nameInput').value.trim();
+  if (name.length < 2) { $('homeError').textContent = 'Escolha um nome com pelo menos 2 caracteres.'; return; }
+  state.name = name;
+  $('createAvatarPreview').textContent = initials(name);
+  if (!$('codeInput').value) askServerForCode();
+  show('screenCreate');
+});
+
+/* ------------------------- criar sala / avatar ------------------------- */
+$('pickAvatarBtn').addEventListener('click', () => $('avatarInput').click());
+$('avatarInput').addEventListener('change', () => {
+  const file = $('avatarInput').files?.[0];
+  $('avatarStatus').textContent = '';
+  if (!file) return;
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) {
+    $('avatarStatus').textContent = 'Use PNG, JPEG, WEBP ou GIF.';
+    $('avatarInput').value = '';
+    return;
+  }
+  if (file.size > 6 * 1024 * 1024) {
+    $('avatarStatus').textContent = 'Imagem grande demais (max 6 MB).';
+    $('avatarInput').value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.avatarDataUrl = reader.result;
+    $('createAvatarPreview').innerHTML = `<img src="${esc(reader.result)}" alt="pre-visualizacao" />`;
+    $('avatarStatus').textContent = `${file.name} pronta para envio.`;
+  };
+  reader.readAsDataURL(file);
+});
+
+$('genCodeBtn').addEventListener('click', askServerForCode);
+function askServerForCode() {
+  if (!state.socket) return;
+  state.socket.emit('room:code', {}, (res) => {
+    if (res?.ok) $('codeInput').value = res.code;
+  });
+}
+
+$('createForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  $('createError').textContent = '';
+
+  const roomName = $('roomNameInput').value.trim();
+  if (roomName.length < 2) { $('createError').textContent = 'De um nome para a sala.'; return; }
+
+  let code = cleanCode($('codeInput').value);
+  if (!code) code = randomRoomCode();
+  $('codeInput').value = code;
+
+  $('createBtn').disabled = true;
+  state.socket.emit('room:create', {
+    name: state.name,
+    token: state.token,
+    roomName,
+    description: $('descInput').value.trim(),
+    code,
+    isPrivate: $('privateInput').checked,
+    avatar: state.avatarDataUrl,
+  }, (res) => {
+    $('createBtn').disabled = false;
+    if (!res?.ok) {
+      $('createError').textContent = res?.error === 'code_taken'
+        ? (res.detail || 'Esse codigo ja esta em uso. Gere outro.')
+        : (res?.error || 'Nao foi possivel criar a sala.');
+      if (res?.error === 'code_taken') askServerForCode();
+      return;
+    }
+    state.token = res.token;
+    localStorage.setItem('chat.token', res.token);
+    state.code = res.code;
+    state.profile = res.profile;
+    toast(`Sala #${res.code} criada!`, true);
+    enterRoom(res.code, true);
+  });
+});
+
+/* ---------------------- buscar sala / banner --------------------------- */
+$('lookupForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  $('lookupError').textContent = '';
+  const code = cleanCode($('lookupCodeInput').value);
+  if (code.length < 3) { $('lookupError').textContent = 'O codigo precisa ter pelo menos 3 caracteres.'; return; }
+
+  $('lookupBtn').disabled = true;
+  state.socket.emit('room:profile', { code }, (res) => {
+    $('lookupBtn').disabled = false;
+    if (!res?.ok) {
+      $('lookupError').textContent = res?.detail || res?.error || 'Nao encontrei essa sala.';
+      return;
+    }
+    state.code = res.profile.code;
+    state.profile = res.profile;
+    renderBanner(res.profile);
+    show('screenRoom');
+  });
+});
+
+function renderBanner(p) {
+  paintAvatar($('roomBannerAvatar'), p);
+  $('roomBannerName').textContent = p.name;
+  $('roomBannerCode').textContent = `#${p.code}`;
+  $('roomBannerDesc').textContent = p.description || 'Sem descricao.';
+  $('roomBannerMembers').textContent = `${p.members} ${p.members === 1 ? 'membro' : 'membros'}`;
+  $('roomBannerCreator').textContent = `criada por ${p.creatorName}`;
+  $('roomBannerLock').classList.toggle('hidden', !p.isPrivate);
+  $('roomJoinBtn').textContent = p.isPrivate ? 'Pedir para participar' : 'Entrar na sala';
+}
+
+$('roomJoinBtn').addEventListener('click', () => enterRoom(state.code, false));
+
+/* ------------------------- entrar / aguardar --------------------------- */
+function enterRoom(code, justCreated) {
+  $('roomError').textContent = '';
+  $('pendingError').textContent = '';
+  if (!state.name) state.name = $('nameInput').value.trim();
+  state.socket.emit('join', { name: state.name, code, token: state.token }, (res) => {
+    if (!res?.ok) {
+      const msg = res?.detail || res?.error || 'Nao foi possivel entrar.';
+      if (justCreated) { toast(msg); show('screenCreate'); $('createError').textContent = msg; return; }
+      $('roomError').textContent = msg;
+      if (res?.profile) renderBanner(res.profile);
+      return;
+    }
+
+    state.token = res.token;
+    localStorage.setItem('chat.token', res.token);
+    state.code = res.code;
+    if (res.profile) state.profile = res.profile;
+
+    if (res.state === 'pending') {
+      $('pendingText').textContent = `Aguardando o administrador de #${res.code} aprovar sua entrada. Voce pode deixar esta tela aberta.`;
+      show('screenPending');
+      return;
+    }
+    openChat(res);
+  });
+}
+
+$('cancelPendingBtn').addEventListener('click', () => {
+  state.socket?.close();
+  state.socket = null;
+  whenIo(connect);
+  show('screenHome');
+});
+
+/* ------------------------------- chat ---------------------------------- */
+function openChat(res) {
+  state.me = res.name;
+  state.role = res.role || 'member';
+  state.code = res.code;
+  state.oldestSeq = res.history[0]?.seq ?? 0;
+  state.rendered = new Set();
+  state.reactions = res.reactions || {};
+  state.reads = res.reads || {};
+  state.lastReadSeq = 0;
+  state.lastSeenSeq = 0;
+  clearAttachment();
+  $('messages').querySelectorAll('.msg,.system,.day-sep').forEach((n) => n.remove());
+
+  stopEmojis();
+  show(null);
+  document.querySelectorAll('.screen').forEach((s) => s.classList.add('hidden'));
+  $('chat').classList.add('on');
+
+  // A presenca vem antes do historico: as bolhas precisam saber o papel
+  // atual para decidir quem pode apagar.
+  renderPresence(res.presence);
+  res.history.forEach((m) => addMessage(m, { force: true }));
+
+  paintAvatar($('chatAvatar'), res.profile);
+  $('chatRoomName').textContent = res.profile?.name || res.code;
+  $('chatRoomCode').textContent = `#${res.code}`;
+  setRequests(res.requests || [], res.pending || 0);
+  scrollDown(true);
+  refreshAllTicks();
+  $('input').focus();
+  flushQueue();
+  setTimeout(markVisibleAsRead, 200);
+  toast(res.role === 'admin' ? 'Voce e o administrador desta sala.' : 'Voce entrou na sala.', true);
+}
+
+/** Volta para o comeco depois de sair, ser removido ou ter a sala apagada. */
+function backToStart() {
+  $('chat').classList.remove('on');
+  $('infoSheet').classList.add('hidden');
+  state.socket?.close();
+  state.socket = null;
+  state.rendered = new Set();
+  state.reactions = {};
+  state.presence = [];
+  state.reads = {};
+  state.lastReadSeq = 0;
+  state.lastSeenSeq = 0;
+  state.replyTo = null;
+  clearAttachment();
+  whenIo(connect);
+  show('screenHome');
+}
+
+function addMessage(msg, opts = {}) {
+  if (state.rendered.has(msg.id)) return;
+  state.rendered.add(msg.id);
+  if (msg.seq) state.lastSeenSeq = Math.max(state.lastSeenSeq || 0, msg.seq);
+  const box = $('messages');
+
+  const prev = [...box.querySelectorAll('.msg,.system')].pop();
+  const prevTs = prev ? Number(prev.dataset.at || 0) : 0;
+  if (!prevTs || dayLabel(prevTs) !== dayLabel(msg.at)) {
+    const sep = document.createElement('div');
+    sep.className = 'day-sep';
+    sep.textContent = dayLabel(msg.at);
+    box.appendChild(sep);
+  }
+
+  if (msg.type === 'system') {
+    const el = document.createElement('div');
+    el.className = 'system';
+    el.dataset.at = msg.at;
+    el.textContent = msg.text;
+    box.appendChild(el);
+    scrollDown(opts.force);
+    return;
+  }
+
+  const mine = msg.author === state.me;
+  const el = document.createElement('div');
+  el.className = `msg ${mine ? 'me' : 'them'}${msg.deleted ? ' deleted' : ''}`;
+  el.dataset.at = msg.at;
+  el.dataset.id = msg.id;
+  el.dataset.author = msg.author;
+  el.dataset.seq = msg.seq;
+
+  let html = mine ? '' : `<div class="author">${esc(msg.author)}</div>`;
+  if (msg.reply) {
+    const qText = msg.reply.deleted ? 'mensagem apagada' : (msg.reply.text || '');
+    html += `<span class="quote" data-goto="${esc(msg.reply.id)}" title="Ir para a mensagem original">
+        <b>${esc(msg.reply.author)}</b>
+        <span class="q-text">${esc(qText)}</span>
+      </span>`;
+  }
+  if (msg.attachment) html += renderAttachment(msg.attachment);
+  if (!msg.deleted && msg.text) html += `<div class="text">${linkify(msg.text)}</div>`;
+  else if (msg.deleted) html += '<div class="text">mensagem apagada</div>';
+  html += `<div class="meta">${timeOf(msg.at)}${mine ? '<span class="ticks" data-ticks="1">&#10003;</span>' : ''}</div>`;
+  el.innerHTML = html;
+  if (!msg.deleted) {
+    el.appendChild(buildReactions(msg.id));
+    el.appendChild(buildActions(msg, mine));
+  }
+  box.appendChild(el);
+  if (mine) updateTicks(el, msg.id);
+  scrollDown(opts.force);
+}
+
+/** Foto vira preview; qualquer outro arquivo vira cartao de download. */
+function renderAttachment(a) {
+  if (a.kind === 'image') {
+    return `<a class="attach" href="${esc(assetUrl(a.url))}" target="_blank" rel="noopener" title="${esc(a.name)}">
+      <img src="${esc(assetUrl(a.url))}" alt="${esc(a.name)}" loading="lazy" />
+    </a>`;
+  }
+  return `<a class="file-card" href="${esc(assetUrl(a.url))}" target="_blank" rel="noopener" download="${esc(a.name)}">
+      <span class="ico">&#128206;</span>
+      <span>
+        <span class="nm">${esc(a.name)}</span>
+        <span class="sz">${formatBytes(a.bytes)}</span>
+      </span>
+    </a>`;
+}
+
+function formatBytes(n) {
+  const b = Number(n) || 0;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+  return `${(b / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * Transforma URLs em link clicavel. O texto passa por esc() ANTES, entao nao
+ * ha como injetar atributo nem tag: so reconhecemos http/https e escapamos
+ * aspas na hora de montar o href.
+ */
+function linkify(text) {
+  const safe = esc(text);
+  return safe.replace(/(https?:\/\/[^\s<>"']+)/g, (url) => {
+    const clean = url.replace(/[.,;:!?)\]]+$/, '');
+    return `<a href="${clean.replace(/"/g, '%22')}" target="_blank" rel="noopener noreferrer">${clean}</a>`;
+  });
+}
+
+/* =========================== VISTO POR =========================== */
+/**
+ * Decide o estado da leitura. Funcao pura: nao toca no DOM, entao da para
+ * testar direto. Regra: so consideramos "lida por todos" quando todo mundo
+ * que nao e o autor ja leu — em conversa de dois, um check vira dois.
+ */
+function readState(messageId) {
+  const readers = (state.reads[messageId] || []).filter((n) => n !== state.me);
+  const others = state.presence.filter((p) => p.name !== state.me).length;
+  return {
+    allRead: others > 0 && readers.length >= others,
+    readers,
+    others,
+  };
+}
+
+/** Um check = entregue, dois checks azuis = lida por todos. */
+function updateTicks(el, messageId) {
+  const ticks = el.querySelector('[data-ticks]');
+  const { allRead, readers } = readState(messageId);
+
+  // O dataset e a fonte da verdade: barato de ler e de testar.
+  el.dataset.readBy = readers.join(',');
+  el.dataset.allRead = allRead ? '1' : '0';
+
+  // A parte visual. Cada passo e opcional de proposito: se um pedaço do DOM
+  // nao existir (ou estivermos fora do navegador), o estado continua correto.
+  if (ticks) {
+    ticks.textContent = allRead ? '✓✓' : '✓';
+    ticks.classList?.toggle('read', allRead);
+  }
+  const meta = el.querySelector('.meta');
+  const seen = meta?.querySelector?.('.seenby');
+  if (allRead && readers.length) {
+    if (seen) {
+      seen.textContent = `visto por ${readers.join(', ')}`;
+    } else if (meta?.appendChild && document.createElement) {
+      const span = document.createElement('span');
+      span.className = 'seenby';
+      span.textContent = `visto por ${readers.join(', ')}`;
+      meta.appendChild(span);
+    }
+  } else if (seen?.remove) {
+    seen.remove();
+  }
+}
+
+function refreshAllTicks() {
+  document.querySelectorAll('.msg.me[data-id]').forEach((el) => updateTicks(el, el.dataset.id));
+}
+
+/** Avisa o servidor que lemos tudo ate a ultima mensagem que chegou. */
+function markVisibleAsRead() {
+  if (!state.socket?.connected || !state.code) return;
+  if (document.visibilityState !== 'visible') return;
+  // Usamos a seq da ultima mensagem RECEBIDA, e nao a ultima bolha do DOM:
+  // a nossa propria mensagem vira bolha pelo ack, sem data-seq, e faria a
+  // conta andar para tras.
+  const seq = state.lastSeenSeq;
+  if (!seq || seq <= state.lastReadSeq) return;
+  state.lastReadSeq = seq;
+  state.socket.emit('message:read', { upToSeq: seq }, () => {});
+}
+
+/** Barrinha de reacoes ja feitas naquela mensagem. */
+function buildReactions(messageId) {
+  const wrap = document.createElement('div');
+  wrap.className = 'rx';
+  wrap.dataset.rx = messageId;
+  paintReactions(wrap, messageId);
+  return wrap;
+}
+
+function paintReactions(wrap, messageId) {
+  const list = state.reactions[messageId] || [];
+  // Agrupa por emoji: um botao por emoji, com a contagem.
+  const grouped = new Map();
+  list.forEach((r) => {
+    if (!grouped.has(r.emoji)) grouped.set(r.emoji, { count: 0, mine: false, names: [] });
+    const g = grouped.get(r.emoji);
+    g.count += 1;
+    g.names.push(r.name);
+    if (r.name === state.me) g.mine = true;
+  });
+  wrap.innerHTML = [...grouped.entries()].map(([emoji, g]) => `
+    <button type="button" data-emoji="${esc(emoji)}" class="${g.mine ? 'mine' : ''}" title="${esc(g.names.join(', '))}">
+      ${esc(emoji)}${g.count > 1 ? ` ${g.count}` : ''}
+    </button>`).join('');
+}
+
+function renderReactionsFor(messageId) {
+  const wrap = document.querySelector(`[data-rx="${messageId}"]`);
+  if (wrap) paintReactions(wrap, messageId);
+}
+
+/** Acoes da bolha: reagir, responder e apagar. */
+function buildActions(msg, mine) {
+  const bar = document.createElement('div');
+  bar.className = 'actions';
+  const rx = QUICK_EMOJI.map((e) => `<button type="button" data-react="${esc(e)}" title="Reagir">${esc(e)}</button>`).join('');
+  const canDelete = mine || state.role === 'admin';
+  bar.innerHTML = `${rx}`
+    + `<button type="button" data-reply="1" title="Responder">&#8617;</button>`
+    + `${canDelete ? '<button type="button" data-delete="1" title="Apagar mensagem">&#128465;</button>' : ''}`;
+  return bar;
+}
+
+/* ========================= RESPONDER / CITAR ========================= */
+function setReplying(messageId) {
+  const bubble = document.querySelector(`.msg[data-id="${messageId}"]`);
+  if (!bubble) return;
+  const author = bubble.dataset.author || '';
+  const text = bubble.querySelector('.text')?.textContent || '';
+  state.replyTo = { id: messageId, author, text };
+  $('replyWho').textContent = author;
+  $('replyPreview').textContent = text;
+  $('replyBar').classList.add('on');
+  $('input').focus();
+}
+function clearReplying() {
+  state.replyTo = null;
+  $('replyBar').classList.remove('on');
+}
+$('replyCancel').addEventListener('click', () => { clearReplying(); $('input').focus(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && state.replyTo) clearReplying();
+});
+
+/** Rolagem suave ate a mensagem citada, com destaque rapido. */
+function goToMessage(messageId) {
+  const el = document.querySelector(`.msg[data-id="${messageId}"]`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+    return;
+  }
+  toast('Essa mensagem esta mais acima no historico. Role para carrega-la.');
+}
+
+/** Um unico listener delega reacoes, resposta, exclusao e clique na citacao. */
+$('messages').addEventListener('click', (e) => {
+  const bubble = e.target.closest('.msg');
+  if (!bubble) return;
+  const messageId = bubble.dataset.id;
+
+  const quote = e.target.closest('[data-goto]');
+  if (quote) { goToMessage(quote.dataset.goto); return; }
+
+  const reactBtn = e.target.closest('[data-react], .rx button');
+  if (reactBtn) {
+    const emoji = reactBtn.dataset.react || reactBtn.dataset.emoji;
+    if (!emoji) return;
+    state.socket.emit('message:react', { messageId, emoji }, (res) => {
+      if (!res?.ok) toast(res?.detail || res?.error || 'Nao deu para reagir.');
+    });
+    return;
+  }
+
+  if (e.target.closest('[data-reply]')) { setReplying(messageId); return; }
+
+  const delBtn = e.target.closest('[data-delete]');
+  if (delBtn) {
+    state.socket.emit('message:delete', { messageId }, (res) => {
+      if (!res?.ok) toast(res?.detail || res?.error || 'Nao deu para apagar.');
+    });
+  }
+});
+
+function renderPresence(list) {
+  state.presence = list || [];
+  $('onlineCount').textContent = state.presence.filter((u) => u.online).length;
+  $('userList').innerHTML = state.presence.map((u) => `
+    <div class="user-row">
+      <span class="avatar ${u.online ? '' : 'off'}" style="background:${colorFor(u.name)}">${esc(initials(u.name))}</span>
+      <span>${esc(u.name)}</span>
+      ${u.role === 'admin' ? '<span class="tag admin">admin</span>' : ''}
+      ${u.name === state.me ? '<span class="tag">voce</span>' : ''}
+    </div>`).join('');
+  // O painel de informacoes, se estiver aberto, mostra a mesma lista.
+  if (!$('infoSheet').classList.contains('hidden')) renderInfoMembers();
+  // O papel pode ter mudado (promocao/rebaixamento): atualiza as acoes das bolhas.
+  refreshBubbleActions();
+}
+
+/** Recalcula quem pode apagar cada bolha (importa quando o papel muda). */
+function refreshBubbleActions() {
+  document.querySelectorAll('.msg').forEach((el) => {
+    if (el.classList.contains('deleted')) return;
+    const bar = el.querySelector('.actions');
+    if (!bar) return;
+    const mine = el.dataset.author === state.me;
+    const canDelete = mine || state.role === 'admin';
+    const has = bar.querySelector('[data-delete]');
+    if (canDelete && !has) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.delete = '1';
+      b.title = 'Apagar mensagem';
+      b.innerHTML = '&#128465;';
+      bar.appendChild(b);
+    } else if (!canDelete && has) {
+      has.remove();
+    }
+  });
+}
+
+function reqItemsHtml() {
+  return state.requests.map((r) => `
+    <div class="req-item">
+      <span class="avatar" style="background:${colorFor(r.name)}">${esc(initials(r.name))}</span>
+      <span class="who">${esc(r.name)}</span>
+      <button class="icon-btn ok" data-req="${r.id}" data-approve="1" title="Aprovar">&#10003;</button>
+      <button class="icon-btn no" data-req="${r.id}" data-approve="0" title="Recusar">&#10005;</button>
+    </div>`).join('');
+}
+
+function setRequests(requests, pending) {
+  state.requests = requests || [];
+  const isAdmin = state.role === 'admin';
+  const tem = state.requests.length > 0;
+  $('reqPanel').classList.toggle('hidden', !isAdmin || !tem);
+  $('reqBadge').textContent = String(pending ?? state.requests.length);
+  $('mobileReqBtn').classList.toggle('hidden', !isAdmin || !tem);
+  const html = reqItemsHtml();
+  $('reqList').innerHTML = html;
+  $('reqListMobile').innerHTML = html || '<p class="desc">Nenhum pedido pendente.</p>';
+}
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-req]');
+  if (!btn) return;
+  btn.disabled = true;
+  state.socket.emit('request:decide', { requestId: Number(btn.dataset.req), approve: btn.dataset.approve === '1' }, (res) => {
+    if (!res?.ok) { btn.disabled = false; toast(res?.detail || res?.error || 'Nao deu para decidir.'); return; }
+    toast(res.approved ? 'Pedido aprovado.' : 'Pedido recusado.', true);
+  });
+});
+
+$('mobileReqBtn').addEventListener('click', () => $('reqSheet').classList.remove('hidden'));
+$('reqClose').addEventListener('click', () => $('reqSheet').classList.add('hidden'));
+$('reqSheet').addEventListener('click', (e) => {
+  if (e.target === $('reqSheet')) $('reqSheet').classList.add('hidden');
+});
+
+function renderTyping() {
+  const now = Date.now();
+  const names = [...state.typing.entries()].filter(([, ts]) => now - ts < 3000).map(([n]) => n);
+  $('typing').textContent = names.length === 0 ? ''
+    : names.length === 1 ? `${names[0]} esta digitando...`
+    : `${names.length} pessoas estao digitando...`;
+}
+function setStatus(mode, text) {
+  const el = $('status');
+  el.className = `status${mode ? ` ${mode}` : ''}`;
+  $('statusText').textContent = text;
+}
+
+/* ------------------------------- envio --------------------------------- */
+$('composer').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = $('input').value.trim();
+  if (!text) return;
+  $('input').value = '';
+  autosize();
+  sendMessage(text);
+});
+
+function sendMessage(text) {
+  const draft = {
+    id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    clientId: `c-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    author: state.me, text, at: Date.now(),
+    reply: state.replyTo ? { ...state.replyTo } : null,
+    attachment: state.pendingAttachment,
+  };
+  clearReplying();
+  clearAttachment();
+  if (!state.socket?.connected) {
+    // Com anexo nao da para enfileirar: o arquivo ja foi enviado e a URL
+    // precisa ir junto. Melhor avisar do que mandar uma mensagem manca.
+    if (draft.attachment) { toast('Sem conexao: o anexo nao pode ir na fila.'); return; }
+    state.queue.push(draft);
+    renderPending(draft, 'na fila');
+    setStatus('off', 'offline - mensagens na fila');
+    return;
+  }
+  renderPending(draft, 'enviando');
+  state.socket.emit('message', {
+    text,
+    clientId: draft.clientId,
+    replyTo: draft.reply?.id,
+    attachment: draft.attachment,
+  }, (res) => {
+    removePending(draft.id);
+    if (!res?.ok) { renderPending(draft, res?.error || 'falha'); toast(res?.error || 'Falha ao enviar.'); return; }
+    addMessage(res.message);
+    markVisibleAsRead();
+  });
+}
+/* ==================== ENVIO DE FOTO E ARQUIVO ==================== */
+$('clipBtn').addEventListener('click', () => $('chatFileInput').click());
+
+$('chatFileInput').addEventListener('change', () => {
+  const file = $('chatFileInput').files?.[0];
+  $('chatFileInput').value = '';
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) { toast('Arquivo grande demais (max 8 MB).'); return; }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    $('clipBtn').disabled = true;
+    setStatus('warn', 'enviando arquivo...');
+    state.socket.emit('attachment:upload', { dataUrl: reader.result, name: file.name }, (res) => {
+      $('clipBtn').disabled = false;
+      setStatus('', 'conectado');
+      if (!res?.ok) { toast(res?.error || 'Nao deu para enviar o arquivo.'); return; }
+      state.pendingAttachment = res.attachment;
+      const isImage = res.attachment.kind === 'image';
+      $('attachThumb').innerHTML = isImage
+        ? `<img src="${esc(assetUrl(res.attachment.url))}" alt="" />`
+        : '<span class="fico">&#128206;</span>';
+      $('attachName').textContent = `${res.attachment.name} · ${formatBytes(res.attachment.bytes)}`;
+      $('attachBar').classList.add('on');
+      $('input').focus();
+    });
+  };
+  reader.readAsDataURL(file);
+});
+
+function clearAttachment() {
+  state.pendingAttachment = null;
+  $('attachBar').classList.remove('on');
+  $('attachThumb').innerHTML = '';
+  $('attachName').textContent = '';
+}
+$('attachCancel').addEventListener('click', () => { clearAttachment(); $('input').focus(); });
+
+function renderPending(draft, label) {
+  const box = $('messages');
+  const el = document.createElement('div');
+  el.className = `msg me ${label === 'falha' || label === 'na fila' ? 'failed' : ''}`;
+  el.dataset.pendingId = draft.id;
+  el.dataset.at = draft.at;
+  const quote = draft.reply
+    ? `<span class="quote"><b>${esc(draft.reply.author)}</b><span class="q-text">${esc(draft.reply.text)}</span></span>`
+    : '';
+  const attach = draft.attachment ? renderAttachment(draft.attachment) : '';
+  el.innerHTML = `${quote}${attach}${draft.text ? `<div class="text">${esc(draft.text)}</div>` : ''}
+    <div class="meta">${timeOf(draft.at)} &middot; ${esc(label)} <button class="retry" type="button">reenviar</button></div>`;
+  el.querySelector('.retry').addEventListener('click', () => {
+    removePending(draft.id);
+    const i = state.queue.findIndex((q) => q.clientId === draft.clientId);
+    if (i >= 0) state.queue.splice(i, 1);
+    sendMessage(draft.text);
+  });
+  box.appendChild(el);
+  scrollDown(true);
+}
+function removePending(id) { document.querySelector(`[data-pending-id="${id}"]`)?.remove(); }
+function flushQueue() {
+  if (!state.socket?.connected) return;
+  const pending = state.queue.splice(0, state.queue.length);
+  pending.forEach((d) => {
+    removePending(d.id);
+    state.socket.emit('message', { text: d.text, clientId: d.clientId }, (res) => {
+      if (res?.ok) addMessage(res.message);
+    });
+  });
+  setStatus('', 'conectado');
+}
+
+/* --------------------------- paginacao --------------------------------- */
+$('loadMore').addEventListener('click', () => {
+  if (!state.oldestSeq) return;
+  state.socket.emit('history', { beforeSeq: state.oldestSeq }, (res) => {
+    if (!res?.ok || res.messages.length === 0) { $('loadMore').classList.add('hidden'); return; }
+    const box = $('messages');
+    const prevHeight = box.scrollHeight;
+    const frag = document.createDocumentFragment();
+    res.messages.forEach((m) => {
+      if (state.rendered.has(m.id)) return;
+      state.rendered.add(m.id);
+      const el = document.createElement('div');
+      el.className = m.type === 'system' ? 'system' : `msg ${m.author === state.me ? 'me' : 'them'}`;
+      el.dataset.at = m.at;
+      el.innerHTML = m.type === 'system' ? esc(m.text)
+        : (m.author === state.me ? '' : `<div class="author">${esc(m.author)}</div>`)
+          + `<div class="text">${esc(m.text)}</div><div class="meta">${timeOf(m.at)}</div>`;
+      frag.appendChild(el);
+    });
+    box.insertBefore(frag, $('loadMore').nextSibling);
+    box.scrollTop = box.scrollHeight - prevHeight;
+    state.oldestSeq = res.messages[0].seq;
+    if (res.messages[0].seq <= res.oldestSeq) $('loadMore').classList.add('hidden');
+  });
+});
+$('messages').addEventListener('scroll', () => {
+  if ($('messages').scrollTop < 8 && state.oldestSeq) $('loadMore').classList.remove('hidden');
+  markVisibleAsRead();
+});
+document.addEventListener('visibilitychange', markVisibleAsRead);
+setInterval(markVisibleAsRead, 5000);   // pega o caso de a pessoa ficar parada na tela
+
+/* --------------------------- digitando... ------------------------------ */
+$('input').addEventListener('input', () => {
+  autosize();
+  if (!state.socket?.connected || state.typingSent) return;
+  state.typingSent = true;
+  state.socket.emit('typing', { isTyping: true });
+  clearTimeout(state.typingStop);
+  state.typingStop = setTimeout(() => {
+    state.typingSent = false;
+    state.socket.emit('typing', { isTyping: false });
+  }, 1600);
+});
+function autosize() {
+  const el = $('input');
+  el.style.height = '46px';
+  el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+}
+$('input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('composer').requestSubmit(); }
+});
+$('nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('homeForm').requestSubmit(); });
+$('leaveBtn').addEventListener('click', leaveRoom);
+
+/* ================== PAINEL DE INFORMACOES DO GRUPO ================== */
+function fillInfoSheet(p) {
+  if (!p) return;
+  paintAvatar($('infoAvatar'), p);
+  $('infoName').textContent = p.name;
+  $('infoCode').textContent = `#${p.code}`;
+  $('infoDesc').textContent = p.description || 'Sem descricao.';
+  $('infoMembers').textContent = `${p.members} ${p.members === 1 ? 'membro' : 'membros'}`;
+  $('infoCreator').textContent = `criada por ${p.creatorName}`;
+  $('infoLock').classList.toggle('hidden', !p.isPrivate);
+
+  const isAdmin = state.role === 'admin';
+  $('infoAdminZone').classList.toggle('hidden', !isAdmin);
+  $('infoDeleteZone').classList.toggle('hidden', p.creatorName !== state.me);
+  if (isAdmin) {
+    $('infoNameInput').value = p.name;
+    $('infoDescInput').value = p.description || '';
+    $('infoPrivateInput').checked = Boolean(p.isPrivate);
+  }
+}
+
+function renderInfoMembers() {
+  const list = state.presence;
+  $('infoMembersTitle').textContent = `Membros (${list.length})`;
+  $('infoMemberList').innerHTML = list.map((u) => {
+    const me = u.name === state.me;
+    const iAmAdmin = state.role === 'admin';
+    const isCreator = u.name === state.profile?.creatorName;
+    let actions = '';
+    if (iAmAdmin && !me && !isCreator) {
+      actions = u.role === 'admin'
+        ? `<button class="mini" data-role="member" data-user="${u.userId}" title="Rebaixar">rebaixar</button>
+           <button class="mini danger" data-kick="${u.userId}" title="Remover">remover</button>`
+        : `<button class="mini" data-role="admin" data-user="${u.userId}" title="Promover">tornar admin</button>
+           <button class="mini danger" data-kick="${u.userId}" title="Remover">remover</button>`;
+    }
+    return `<div class="member-line">
+      <span class="avatar ${u.online ? '' : 'off'}" style="background:${colorFor(u.name)}">${esc(initials(u.name))}</span>
+      <span class="who">${esc(u.name)}</span>
+      ${u.role === 'admin' ? '<span class="tag admin">admin</span>' : ''}
+      ${me ? '<span class="tag">voce</span>' : ''}
+      ${isCreator ? '<span class="tag">criador</span>' : ''}
+      ${actions}
+    </div>`;
+  }).join('');
+}
+
+$('infoBtn').addEventListener('click', () => {
+  fillInfoSheet(state.profile);
+  renderInfoMembers();
+  $('infoError').textContent = '';
+  $('infoSheet').classList.remove('hidden');
+  refreshNotifState();
+});
+$('infoClose').addEventListener('click', () => $('infoSheet').classList.add('hidden'));
+$('infoSheet').addEventListener('click', (e) => {
+  if (e.target === $('infoSheet')) $('infoSheet').classList.add('hidden');
+});
+
+$('infoSaveBtn').addEventListener('click', () => {
+  $('infoError').textContent = '';
+  state.socket.emit('room:update', {
+    name: $('infoNameInput').value.trim(),
+    description: $('infoDescInput').value.trim(),
+    isPrivate: $('infoPrivateInput').checked,
+  }, (res) => {
+    if (!res?.ok) { $('infoError').textContent = res?.detail || res?.error || 'Nao deu para salvar.'; return; }
+    state.profile = res.profile;
+    fillInfoSheet(res.profile);
+    toast('Informacoes atualizadas.', true);
+  });
+});
+
+$('infoAvatarBtn').addEventListener('click', () => $('infoAvatarInput').click());
+$('infoAvatarInput').addEventListener('change', () => {
+  const file = $('infoAvatarInput').files?.[0];
+  $('infoError').textContent = '';
+  if (!file) return;
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) { $('infoError').textContent = 'Use PNG, JPEG, WEBP ou GIF.'; return; }
+  if (file.size > 6 * 1024 * 1024) { $('infoError').textContent = 'Imagem grande demais (max 6 MB).'; return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.socket.emit('room:avatar', { avatar: reader.result }, (res) => {
+      if (!res?.ok) { $('infoError').textContent = res?.detail || res?.error || 'Nao deu para trocar a foto.'; return; }
+      if (res.profile) { state.profile = res.profile; fillInfoSheet(res.profile); }
+      toast('Foto atualizada.', true);
+    });
+  };
+  reader.readAsDataURL(file);
+  $('infoAvatarInput').value = '';
+});
+
+$('infoMemberList').addEventListener('click', (e) => {
+  const roleBtn = e.target.closest('[data-role]');
+  if (roleBtn) {
+    roleBtn.disabled = true;
+    state.socket.emit('member:role', { userId: Number(roleBtn.dataset.user), role: roleBtn.dataset.role }, (res) => {
+      if (!res?.ok) { roleBtn.disabled = false; $('infoError').textContent = res?.detail || res?.error || 'Nao deu.'; return; }
+      toast(res.role === 'admin' ? 'Promovido a administrador.' : 'Rebaixado a membro.', true);
+    });
+    return;
+  }
+  const kickBtn = e.target.closest('[data-kick]');
+  if (kickBtn) {
+    kickBtn.disabled = true;
+    state.socket.emit('member:remove', { userId: Number(kickBtn.dataset.kick) }, (res) => {
+      if (!res?.ok) { kickBtn.disabled = false; $('infoError').textContent = res?.detail || res?.error || 'Nao deu.'; return; }
+      toast('Membro removido.', true);
+    });
+  }
+});
+
+function leaveRoom() {
+  if (!state.socket) return backToStart();
+  state.socket.emit('member:remove', {}, (res) => {
+    if (!res?.ok) {
+      // O criador nao pode simplesmente sair: precisa apagar a sala.
+      toast(res?.detail || res?.error || 'Nao deu para sair.');
+      $('infoError').textContent = res?.detail || res?.error || '';
+      $('infoSheet').classList.remove('hidden');
+      return;
+    }
+    backToStart();
+  });
+}
+
+/* ======================= NOTIFICACOES PUSH =======================
+ * Dois caminhos, do mais simples ao mais completo:
+ *   1. Notification API local  -> funciona com a aba aberta em segundo plano
+ *   2. Web Push (VAPID + service worker) -> funciona com a aba FECHADA
+ * O segundo exige HTTPS (ou localhost) e permissao do usuario.
+ */
+function urlBase64ToUint8Array(base64) {
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function setNotifState(text, label) {
+  $('notifState').textContent = text;
+  if (label) $('notifBtn').textContent = label;
+}
+
+/** Notificacao local: usada quando a aba esta em segundo plano. */
+function localNotify(msg) {
+  if (document.visibilityState === 'visible') return;      // a pessoa esta olhando
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    new Notification(`${msg.author} · #${state.code}`, {
+      body: msg.deleted ? 'mensagem apagada' : msg.text,
+      tag: `msg-${state.code}`,
+    });
+  } catch (_) { /* alguns navegadores exigem o service worker */ }
+}
+
+async function refreshNotifState() {
+  if (!('Notification' in window)) {
+    state.push.supported = false;
+    setNotifState('Este navegador nao suporta notificacoes.', 'Indisponivel');
+    $('notifBtn').disabled = true;
+    return;
+  }
+  state.push.supported = true;
+  if (Notification.permission === 'denied') {
+    setNotifState('Bloqueadas nas permissoes do navegador.', 'Bloqueadas');
+    $('notifBtn').disabled = true;
+    return;
+  }
+  const swSupported = 'serviceWorker' in navigator && 'PushManager' in window;
+  if (!swSupported) {
+    setNotifState(Notification.permission === 'granted'
+      ? 'Ativas so com a aba aberta (sem service worker).'
+      : 'Só com a aba aberta (sem service worker neste navegador).', 'Ativar');
+    return;
+  }
+  const reg = await navigator.serviceWorker.getRegistration().catch(() => null);
+  const sub = reg ? await reg.pushManager.getSubscription().catch(() => null) : null;
+  if (sub) {
+    state.push.endpoint = sub.endpoint;
+    setNotifState('Ativas, inclusive com a aba fechada.', 'Desativar');
+  } else {
+    setNotifState('Desligadas.', 'Ativar notificacoes');
+  }
+}
+
+$('notifBtn').addEventListener('click', async () => {
+  $('notifBtn').disabled = true;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    await navigator.serviceWorker.ready;
+
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      // Segundo clique: desativa.
+      await existing.unsubscribe();
+      await fetch(BACKEND + '/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: existing.endpoint }),
+      }).catch(() => {});
+      state.push.endpoint = null;
+      setNotifState('Desligadas.', 'Ativar notificacoes');
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      setNotifState('Voce nao deu permissao.', 'Tentar de novo');
+      return;
+    }
+
+    const { publicKey } = await fetch(BACKEND + '/push/key').then((r) => r.json());
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+
+    const res = await fetch(BACKEND + '/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: sub.endpoint,
+        keys: sub.getKey('p256dh') ? {
+          p256dh: btoa(String.fromCharCode(...new Uint8Array(sub.getKey('p256dh')))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+          auth: btoa(String.fromCharCode(...new Uint8Array(sub.getKey('auth')))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+        } : null,
+        token: state.token,
+        name: state.name || state.me,
+      }),
+    }).then((r) => r.json());
+
+    if (!res?.ok) { setNotifState(res?.error || 'Nao deu para registrar.', 'Tentar de novo'); return; }
+    if (res.token) { state.token = res.token; localStorage.setItem('chat.token', res.token); }
+    state.push.endpoint = sub.endpoint;
+    setNotifState('Ativas, inclusive com a aba fechada.', 'Desativar');
+    toast('Notificacoes ativadas.', true);
+  } catch (err) {
+    setNotifState(`Falhou: ${err.message}. Precisa de HTTPS.`, 'Tentar de novo');
+  } finally {
+    $('notifBtn').disabled = false;
+  }
+});
+
+// Clicar na notificacao abre a aba e vai direto para a sala.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type !== 'push-open' || !event.data.roomCode) return;
+    if (state.code === event.data.roomCode && !$('chat').classList.contains('hidden')) return;
+    state.name = state.me || $('nameInput').value.trim() || 'Convidado';
+    if (!state.socket) whenIo(connect);
+    enterRoom(event.data.roomCode, false);
+  });
+}
+
+$('infoLeaveBtn').addEventListener('click', leaveRoom);
+
+$('infoDeleteBtn').addEventListener('click', () => {
+  $('infoError').textContent = '';
+  state.socket.emit('room:delete', {}, (res) => {
+    if (!res?.ok) { $('infoError').textContent = res?.detail || res?.error || 'Nao deu para apagar.'; return; }
+    backToStart();
+  });
+});
+
+bindCodeInput($('codeInput'));
+bindCodeInput($('lookupCodeInput'));
+
+/* ------------------------------ conexao -------------------------------- */
+function connect() {
+  state.socket = io(BACKEND || undefined, { transports: ['websocket', 'polling'], reconnectionDelayMax: 4000 });
+  state.socket.on('connect', () => { setStatus('', 'conectado'); askServerForCode(); });
+  state.socket.on('disconnect', () => setStatus('off', 'desconectado'));
+  state.socket.on('reconnect', () => { setStatus('', 'conectado'); flushQueue(); toast('Conexao restabelecida.'); });
+  state.socket.on('connect_error', () => setStatus('off', 'sem conexao'));
+
+  state.socket.on('message', (msg) => {
+    addMessage(msg);
+    // Notificacao local quando a aba esta em segundo plano. Quem esta com a
+    // aba fechada recebe pelo Web Push, que o servidor dispara a parte.
+    if (msg.type === 'chat' && msg.author !== state.me) {
+      localNotify(msg);
+      markVisibleAsRead();
+    }
+  });
+  // A presenca muda quem "conta" para o visto por, entao recalcula os checks.
+  state.socket.on('presence', (list) => { renderPresence(list); refreshAllTicks(); });
+  state.socket.on('room:profile', (p) => {
+    state.profile = p;
+    paintAvatar($('chatAvatar'), p);
+    $('chatRoomName').textContent = p.name;
+    if (!$('infoSheet').classList.contains('hidden')) fillInfoSheet(p);
+  });
+
+  state.socket.on('reactions', ({ messageId, reactions }) => {
+    state.reactions[messageId] = reactions;
+    renderReactionsFor(messageId);
+  });
+
+  // Alguem leu ate a seq X: marcamos todas as nossas mensagens ate ali.
+  state.socket.on('reads', ({ name, upToSeq }) => {
+    let changed = false;
+    document.querySelectorAll('.msg.me[data-id]').forEach((el) => {
+      if (Number(el.dataset.seq) > upToSeq) return;
+      const list = state.reads[el.dataset.id] || [];
+      if (!list.includes(name)) { list.push(name); changed = true; }
+      state.reads[el.dataset.id] = list;
+    });
+    if (changed) refreshAllTicks();
+  });
+
+  state.socket.on('message:deleted', ({ messageId, byAdmin }) => {
+    const el = document.querySelector(`.msg[data-id="${messageId}"]`);
+    if (!el) return;
+    el.classList.add('deleted');
+    el.querySelector('.text').textContent = 'mensagem apagada';
+    el.querySelector('.rx')?.remove();
+    el.querySelector('.actions')?.remove();
+    delete state.reactions[messageId];
+    if (byAdmin) toast('Um administrador apagou uma mensagem.');
+  });
+
+  state.socket.on('removed', ({ self }) => {
+    toast(self ? 'Voce saiu da sala.' : 'Voce foi removido(a) da sala.');
+    backToStart();
+  });
+
+  state.socket.on('room:deleted', () => {
+    toast('Esta sala foi apagada.');
+    backToStart();
+  });
+  state.socket.on('typing', ({ name, isTyping }) => {
+    if (name === state.me) return;
+    if (isTyping) state.typing.set(name, Date.now()); else state.typing.delete(name);
+    renderTyping();
+    clearTimeout(state.typingTimer);
+    state.typingTimer = setTimeout(renderTyping, 1500);
+  });
+  state.socket.on('requests:update', ({ requests, pending, roomCode }) => {
+  if (roomCode && state.code && roomCode !== state.code) return;
+  setRequests(requests, pending);
+});
+  state.socket.on('request:approved', ({ roomCode }) => {
+    toast(`Aprovado! Entrando em #${roomCode}...`, true);
+    setTimeout(() => enterRoom(roomCode, false), 900);
+  });
+  state.socket.on('request:rejected', ({ roomCode }) => {
+    $('pendingError').textContent = `Seu pedido para #${roomCode} foi recusado.`;
+  });
+}
+
+whenIo(connect);
+startEmojis();
+
+// Exporta funcoes e estado para o teste automatizado (test/dom.js), que roda
+// este mesmo script num contexto Node. No navegador e apenas inofensivo.
+globalThis.__chat = {
+  assetUrl, setBackendBase, BACKEND,
+  state, startEmojis, stopEmojis, respawn, show, renderBanner, setRequests,
+  cleanCode, randomRoomCode, esc, initials, paintAvatar,
+  buildReactions, paintReactions, buildActions, refreshBubbleActions,
+  fillInfoSheet, renderInfoMembers, leaveRoom, backToStart, openChat, addMessage,
+  setReplying, clearReplying, goToMessage, urlBase64ToUint8Array, localNotify,
+  refreshNotifState, setNotifState,
+  renderAttachment, formatBytes, linkify, updateTicks, refreshAllTicks, readState,
+  markVisibleAsRead, clearAttachment,
+};
+</script>
+</body>
+</html>
